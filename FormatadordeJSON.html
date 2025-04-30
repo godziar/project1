@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Conversor de JSON RPA</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #0c1014;
+      padding: 30px;
+      color: #e0e0e0;
+    }
+
+    h1 {
+      text-align: center;
+      color: #58cc02;
+      margin-bottom: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: #1a1f24;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    input[type="file"] {
+      display: block;
+      margin-bottom: 20px;
+      color: #e0e0e0;
+    }
+
+    button {
+      background-color: #58cc02;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    button:hover {
+      background-color: #46a302;
+    }
+
+    #resultado {
+      margin-top: 25px;
+      white-space: pre-wrap;
+      background-color: #12171c;
+      color: #e0e0e0;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #333;
+    }
+
+    #copiar {
+      display: none;
+      margin-top: 10px;
+      background-color: #4a90e2;
+    }
+
+    #copiar:hover {
+      background-color: #357ABD;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Conversor de JSON RPA</h1>
+    <input type="file" id="arquivoInput" accept=".json,.txt">
+    <button onclick="converterArquivo()">Converter</button>
+    <button id="copiar" onclick="copiarTexto()">Copiar Resultado</button>
+    <div id="resultado"></div>
+  </div>
+
+  <script>
+    function prepararTextoParaJSON(texto) {
+      let corrigido = texto.trim();
+      if (!corrigido.startsWith("[")) corrigido = "[" + corrigido;
+      if (!corrigido.endsWith("]")) corrigido = corrigido + "]";
+      corrigido = corrigido.replace(/}\s*{/g, '},{');
+      return corrigido;
+    }
+
+    function filtrarDadosImportantes(texto) {
+      const listaOrganizada = [];
+
+      try {
+        const textoCorrigido = prepararTextoParaJSON(texto);
+        const jsonArray = JSON.parse(textoCorrigido);
+
+        const mapaDeAlias = {};
+        jsonArray.forEach(obj => {
+          if (obj.id) {
+            const alias = obj.settings?.alias || obj.settings?.name || obj.id;
+            mapaDeAlias[obj.id] = alias;
+          }
+        });
+
+        jsonArray.forEach((obj, index) => {
+          if (typeof obj === 'object' && obj !== null) {
+            let resultado = `🔹 Elemento ${index + 1}\n`;
+            resultado += `type: ${obj.type || "Não informado"}\n`;
+
+            const alias = obj.settings?.alias || obj.settings?.name || "Não informado";
+            resultado += `alias: ${alias}\n`;
+
+            if (obj.type === "Designer:callSubroutine") {
+              const subroutineName = obj.settings?.subroutineName || "Nome não informado";
+              const returnPointId = obj.settings?.returnPointId;
+              const returnPointAlias = mapaDeAlias[returnPointId] || returnPointId || "Não definido";
+              resultado += `Sub-rotina: Executa a sub-rotina chamada '${subroutineName}', e depois volta para '${returnPointAlias}'.\n`;
+            }
+
+            if (obj.type === "Designer:decision") {
+              const varA = obj.settings?.varA?.value || "Não informado";
+              const varB = obj.settings?.varB?.value || "Não informado";
+              const comparator = obj.settings?.comparator || "Não informado";
+
+              const trueId = obj.trueEntrypoint;
+              const falseId = obj.falseEntrypoint;
+              const trueAlias = mapaDeAlias[trueId] || trueId || "Não definido";
+              const falseAlias = mapaDeAlias[falseId] || falseId || "Não definido";
+
+              resultado += `Decisão: Verifica se ${varA} é ${comparator} que ${varB}. Se sim, vai para '${trueAlias}'. Senão, vai para '${falseAlias}'.\n`;
+            }
+
+            if (obj.type === "Designer:tryCatch") {
+              const tryId = obj.tryEntrypoint;
+              const catchId = obj.catchEntrypoint;
+              const tryAlias = mapaDeAlias[tryId] || tryId || "Não definido";
+              const catchAlias = mapaDeAlias[catchId] || catchId || "Não definido";
+
+              resultado += `Tentativa: Tenta executar a ação '${tryAlias}'. Se der erro, segue para '${catchAlias}'.\n`;
+            }
+
+            if (obj.type === "Designer:loop") {
+              const loopStartId = obj.entrypoint;
+              const loopAlias = mapaDeAlias[loopStartId] || loopStartId || "Não definido";
+
+              resultado += `Loop: Repete ações começando por '${loopAlias}'.\n`;
+            }
+
+            if (obj.type === "Designer:section") {
+              const sectionStartId = obj.entrypoint;
+              const sectionAlias = mapaDeAlias[sectionStartId] || sectionStartId || "Não definido";
+
+              resultado += `Seção: Inicia um novo trecho do processo a partir de '${sectionAlias}'.\n`;
+            }
+
+            listaOrganizada.push(resultado.trim());
+          }
+        });
+
+      } catch (erro) {
+        console.error("Erro ao tentar ler o JSON:", erro.message);
+        listaOrganizada.push("Erro: O arquivo não está em formato JSON válido.");
+      }
+
+      return listaOrganizada;
+    }
+
+    function converterArquivo() {
+      const input = document.getElementById('arquivoInput');
+      const resultadoDiv = document.getElementById('resultado');
+      const copiarBtn = document.getElementById('copiar');
+
+      if (input.files.length === 0) {
+        resultadoDiv.textContent = "Por favor, selecione um arquivo primeiro.";
+        copiarBtn.style.display = "none";
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const conteudo = e.target.result;
+        const resultado = filtrarDadosImportantes(conteudo).join("\n\n");
+        resultadoDiv.textContent = resultado;
+        copiarBtn.style.display = "inline-block";
+      };
+      reader.readAsText(input.files[0]);
+    }
+
+    function copiarTexto() {
+      const texto = document.getElementById('resultado').textContent;
+      navigator.clipboard.writeText(texto).then(() => {
+        alert("Texto copiado para a área de transferência!");
+      }).catch(err => {
+        alert("Erro ao copiar: " + err);
+      });
+    }
+  </script>
+</body>
+</html>
